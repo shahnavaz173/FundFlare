@@ -35,6 +35,8 @@ const navItems = [
   { label: "Dashboard", icon: <DashboardIcon />, path: "/dashboard" },
   { label: "Accounts", icon: <AccountBalanceIcon />, path: "/dashboard/accounts" },
   { label: "Transactions", icon: <ReceiptIcon />, path: "/dashboard/transactions" },
+  { label: "Import Cashbook Transactions", icon: <ReceiptIcon />, path: "/dashboard/import-transactions" },
+  
 ];
 
 export default function DashboardLayout() {
@@ -177,7 +179,7 @@ export default function DashboardLayout() {
             value={bottomValue}
             onChange={(e, newValue) => handleNavClick(navItems[newValue].path)}
           >
-            {navItems.map((item) => (
+            {navItems.filter(item => item.path != '/dashboard/import-transactions').map((item) => (
               <BottomNavigationAction key={item.label} label={item.label} icon={item.icon} />
             ))}
           </BottomNavigation>

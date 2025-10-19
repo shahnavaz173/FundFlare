@@ -1,3 +1,4 @@
+//accountService/.js
 // Firestore-based service for accounts (collection: users/{uid}/accounts)
 import {
   collection,

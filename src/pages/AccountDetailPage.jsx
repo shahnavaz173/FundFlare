@@ -296,7 +296,7 @@ const getAccountIcon = (type) => {
         onClick={handleAddTransaction}
         sx={{
           position: "fixed",
-          bottom: 24,
+          bottom: 70,
           right: 24,
           boxShadow: "0 6px 10px rgba(0,0,0,0.3)",
         }}
