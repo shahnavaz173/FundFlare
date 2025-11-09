@@ -9,6 +9,7 @@ import {
   serverTimestamp,
 } from "firebase/firestore";
 import { db } from "../lib/firebase";
+import { deleteDoc } from "firebase/firestore"; // ✅ at top
 
 export async function addTransaction(userId, txn) {
   console.log(txn)
@@ -191,4 +192,58 @@ export async function updateTransaction(userId, txnId, updatedTxn) {
 
   // --- Update the transaction document itself ---
   await updateDoc(docRef, updatedTxn);
+}
+
+// --- Delete transaction and revert balances ---
+export async function deleteTransaction(userId, txnId) {
+  const docRef = doc(db, "users", userId, "transactions", txnId);
+  const snap = await getDoc(docRef);
+  if (!snap.exists()) return;
+
+  const txn = snap.data();
+
+  // --- Revert main account balance ---
+  const mainAccountRef = doc(db, "users", userId, "accounts", txn.accountId);
+  const mainSnap = await getDoc(mainAccountRef);
+  if (mainSnap.exists()) {
+    let balance = mainSnap.data().balance ?? 0;
+    balance -= txn.type === "credit" ? txn.amount : -txn.amount;
+    await updateDoc(mainAccountRef, { balance });
+  }
+
+  // --- Revert extra account if exists ---
+  if (txn.extraAccountId) {
+    const extraRef = doc(db, "users", userId, "accounts", txn.extraAccountId);
+    const extraSnap = await getDoc(extraRef);
+    if (extraSnap.exists()) {
+      let extraBalance = extraSnap.data().balance ?? 0;
+      const accountType = txn.accountType?.toLowerCase();
+      const accountName = txn.accountName?.toLowerCase();
+      const txnType = txn.type;
+
+      let updateType = null;
+
+      // Mirror the logic from addTransaction (reverse of what was applied)
+      if (accountName === "investment") {
+        // addTransaction did: credit → debit, debit → credit
+        // so here we reverse that same effect
+        if (txnType === "credit") updateType = "credit";
+        else if (txnType === "debit") updateType = "debit";
+      } else if (accountType === "party") {
+        // addTransaction did: credit → credit, debit → debit
+        if (txnType === "credit") updateType = "debit";
+        else if (txnType === "debit") updateType = "credit";
+      } else if (accountType === "fund" && txnType === "credit") {
+        updateType = "credit";
+      }
+
+      if (updateType === "credit") extraBalance += txn.amount;
+      else if (updateType === "debit") extraBalance -= txn.amount;
+
+      await updateDoc(extraRef, { balance: extraBalance });
+    }
+  }
+
+  // --- Finally delete the transaction document ---
+  await deleteDoc(docRef);
 }

@@ -10,18 +10,18 @@ import {
   TextField,
   MenuItem,
   Fab,
-  Divider,
   IconButton,
   useMediaQuery,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import AddIcon from "@mui/icons-material/Add";
 import EditIcon from "@mui/icons-material/Edit";
+import DeleteIcon from "@mui/icons-material/Delete";
 import ReceiptLongIcon from "@mui/icons-material/ReceiptLong";
 import AccountBalanceIcon from "@mui/icons-material/AccountBalance";
 import AccountBalanceWalletIcon from "@mui/icons-material/AccountBalanceWallet";
 import CreditCardIcon from "@mui/icons-material/CreditCard";
-import { listenToTransactions } from "../services/transactionService";
+import { listenToTransactions, deleteTransaction } from "../services/transactionService";
 import { getAccountById } from "../services/accountService";
 import { useAuth } from "../context/AuthContext";
 
@@ -87,6 +87,11 @@ export default function AccountDetailPage() {
     navigate(`/dashboard/transactions/add/${id}`, {
       state: { preselectedAccountId: id },
     });
+  };
+
+  const handleDeleteTransaction = async (txnId) => {
+    if (!window.confirm("Are you sure you want to delete this transaction?")) return;
+    await deleteTransaction(user.uid, txnId);
   };
 
   const getAccountIcon = (type) => {
@@ -196,7 +201,7 @@ export default function AccountDetailPage() {
         </Paper>
       )}
 
-      {/* Filters (Collapse) */}
+      {/* Filters */}
       <Collapse in={showFilters || !isMobile}>
         <Paper
           elevation={2}
@@ -364,19 +369,35 @@ export default function AccountDetailPage() {
                         {t.createdAt?.toDate().toLocaleString()}
                       </Typography>
                     </Box>
-                    <IconButton
-                      size="small"
-                      sx={{
-                        color: textColor,
-                        p: 0.5,
-                        "&:hover": { bgcolor: "rgba(0,0,0,0.05)" },
-                      }}
-                      onClick={() =>
-                        navigate(`/dashboard/transactions/edit/${t.id}`)
-                      }
-                    >
-                      <EditIcon fontSize="small" />
-                    </IconButton>
+
+                    <Stack direction="row" spacing={0.5}>
+                      <IconButton
+                        size="small"
+                        sx={{
+                          color: textColor,
+                          p: 0.5,
+                          "&:hover": { bgcolor: "rgba(0,0,0,0.05)" },
+                        }}
+                        onClick={() =>
+                          navigate(`/dashboard/transactions/edit/${t.id}`)
+                        }
+                      >
+                        <EditIcon fontSize="small" />
+                      </IconButton>
+
+                      {/* 🗑️ Delete Button */}
+                      <IconButton
+                        size="small"
+                        sx={{
+                          color: "error.main",
+                          p: 0.5,
+                          "&:hover": { bgcolor: "rgba(255,0,0,0.08)" },
+                        }}
+                        onClick={() => handleDeleteTransaction(t.id)}
+                      >
+                        <DeleteIcon fontSize="small" />
+                      </IconButton>
+                    </Stack>
                   </Stack>
                 </Paper>
               </Box>

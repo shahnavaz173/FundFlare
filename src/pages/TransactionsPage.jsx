@@ -16,10 +16,11 @@ import {
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import EditIcon from "@mui/icons-material/Edit";
+import DeleteIcon from "@mui/icons-material/Delete";
 import ReceiptLongIcon from "@mui/icons-material/ReceiptLong";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { listenToTransactions } from "../services/transactionService";
+import { listenToTransactions, deleteTransaction } from "../services/transactionService";
 import { listenToAccounts } from "../services/accountService";
 
 export default function TransactionsPage() {
@@ -109,6 +110,12 @@ export default function TransactionsPage() {
     setFilteredTransactions(filtered);
   }, [transactions, selectedTypes, selectedAccounts, dateRange, month, year]);
 
+  // ✅ Delete Transaction Handler
+  const handleDeleteTransaction = async (txnId) => {
+    if (!window.confirm("Are you sure you want to delete this transaction?")) return;
+    await deleteTransaction(user.uid, txnId);
+  };
+
   return (
     <Box sx={{ p: 3, position: "relative", minHeight: "100vh" }}>
       {/* --- Heading with Icon --- */}
@@ -119,7 +126,7 @@ export default function TransactionsPage() {
         </Typography>
       </Stack>
 
-      {/* --- Filter Panel (UNCHANGED) --- */}
+      {/* --- Filter Panel --- */}
       <Paper sx={{ p: 2, mb: 2 }}>
         <Box display="flex" justifyContent="space-between" alignItems="center">
           <Typography variant="subtitle1">Filters</Typography>
@@ -137,11 +144,7 @@ export default function TransactionsPage() {
                 onChange={(e, newVal) => setSelectedTypes(newVal)}
                 renderTags={(value, getTagProps) =>
                   value.map((option, index) => (
-                    <Chip
-                      key={option}
-                      label={option}
-                      {...getTagProps({ index })}
-                    />
+                    <Chip key={option} label={option} {...getTagProps({ index })} />
                   ))
                 }
                 renderInput={(params) => (
@@ -159,11 +162,7 @@ export default function TransactionsPage() {
                 onChange={(e, newVal) => setSelectedAccounts(newVal)}
                 renderTags={(value, getTagProps) =>
                   value.map((option, index) => (
-                    <Chip
-                      key={option}
-                      label={option}
-                      {...getTagProps({ index })}
-                    />
+                    <Chip key={option} label={option} {...getTagProps({ index })} />
                   ))
                 }
                 renderInput={(params) => (
@@ -235,7 +234,7 @@ export default function TransactionsPage() {
         </Collapse>
       </Paper>
 
-      {/* --- Transactions List (Improved Design) --- */}
+      {/* --- Transactions List --- */}
       <Stack spacing={1}>
         {filteredTransactions.length === 0 ? (
           <Typography variant="body2" color="text.secondary">
@@ -329,19 +328,35 @@ export default function TransactionsPage() {
                           {t.createdAt?.toDate().toLocaleString()}
                         </Typography>
                       </Box>
-                      <IconButton
-                        size="small"
-                        sx={{
-                          color: textColor,
-                          p: 0.5,
-                          "&:hover": { bgcolor: "rgba(0,0,0,0.05)" },
-                        }}
-                        onClick={() =>
-                          navigate(`/dashboard/transactions/edit/${t.id}`)
-                        }
-                      >
-                        <EditIcon fontSize="small" />
-                      </IconButton>
+
+                      {/* ✏️ Edit + 🗑️ Delete Buttons */}
+                      <Stack direction="row" spacing={0.5}>
+                        <IconButton
+                          size="small"
+                          sx={{
+                            color: textColor,
+                            p: 0.5,
+                            "&:hover": { bgcolor: "rgba(0,0,0,0.05)" },
+                          }}
+                          onClick={() =>
+                            navigate(`/dashboard/transactions/edit/${t.id}`)
+                          }
+                        >
+                          <EditIcon fontSize="small" />
+                        </IconButton>
+
+                        <IconButton
+                          size="small"
+                          sx={{
+                            color: "error.main",
+                            p: 0.5,
+                            "&:hover": { bgcolor: "rgba(255,0,0,0.08)" },
+                          }}
+                          onClick={() => handleDeleteTransaction(t.id)}
+                        >
+                          <DeleteIcon fontSize="small" />
+                        </IconButton>
+                      </Stack>
                     </Stack>
                   </Paper>
                 </Box>
