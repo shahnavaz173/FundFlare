@@ -10,41 +10,42 @@ import {
   TextField,
   MenuItem,
   Fab,
+  Divider,
+  IconButton,
+  useMediaQuery,
 } from "@mui/material";
+import { useTheme } from "@mui/material/styles";
 import AddIcon from "@mui/icons-material/Add";
+import EditIcon from "@mui/icons-material/Edit";
+import ReceiptLongIcon from "@mui/icons-material/ReceiptLong";
 import AccountBalanceIcon from "@mui/icons-material/AccountBalance";
-import AccountBalanceWalletIcon from "@mui/icons-material/AccountBalanceWallet"
-import SavingsIcon from "@mui/icons-material/Savings";
+import AccountBalanceWalletIcon from "@mui/icons-material/AccountBalanceWallet";
 import CreditCardIcon from "@mui/icons-material/CreditCard";
 import { listenToTransactions } from "../services/transactionService";
 import { getAccountById } from "../services/accountService";
 import { useAuth } from "../context/AuthContext";
 
 export default function AccountDetailPage() {
-  const { id } = useParams(); // Account ID
+  const { id } = useParams();
   const { user } = useAuth();
   const navigate = useNavigate();
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
 
   const [account, setAccount] = useState(null);
   const [transactions, setTransactions] = useState([]);
   const [filteredTransactions, setFilteredTransactions] = useState([]);
 
-  // Filters
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [month, setMonth] = useState("");
   const [year, setYear] = useState("");
-
-  // Collapse toggle for mobile filters
   const [showFilters, setShowFilters] = useState(false);
 
   useEffect(() => {
     if (!user) return;
 
-    // Fetch account details
     getAccountById(user.uid, id).then(setAccount);
-
-    // Listen to all transactions and filter by account ID
     const unsub = listenToTransactions(user.uid, (allTxns) => {
       const filtered = allTxns
         .filter((t) => t.accountId === id)
@@ -56,129 +57,157 @@ export default function AccountDetailPage() {
     return () => unsub && unsub();
   }, [user, id]);
 
-  // Apply filters
   useEffect(() => {
     let filtered = [...transactions];
-
     if (fromDate)
       filtered = filtered.filter(
         (t) => t.createdAt?.toDate() >= new Date(fromDate)
       );
-
     if (toDate)
       filtered = filtered.filter(
         (t) => t.createdAt?.toDate() <= new Date(toDate)
       );
-
     if (month)
       filtered = filtered.filter(
         (t) => t.createdAt?.toDate().getMonth() + 1 === parseInt(month)
       );
-
     if (year)
       filtered = filtered.filter(
         (t) => t.createdAt?.toDate().getFullYear() === parseInt(year)
       );
-
     setFilteredTransactions(filtered);
   }, [fromDate, toDate, month, year, transactions]);
 
-  // Helper arrays for filters
   const months = Array.from({ length: 12 }, (_, i) => i + 1);
   const years = Array.from(
     new Set(transactions.map((t) => t.createdAt?.toDate().getFullYear()))
   ).sort((a, b) => b - a);
 
-const handleAddTransaction = () => {
-  navigate(`/dashboard/transactions/add/${id}`, { state: { preselectedAccountId: id } });
-};
+  const handleAddTransaction = () => {
+    navigate(`/dashboard/transactions/add/${id}`, {
+      state: { preselectedAccountId: id },
+    });
+  };
 
-
-// Choose icon based on account type
-const getAccountIcon = (type) => {
-  switch (type.toLowerCase()) {
-    case "asset":
-      return <AccountBalanceIcon sx={{ fontSize: 40, color: "#388e3c" }} />; // green
-    case "party":
-      return <CreditCardIcon sx={{ fontSize: 40, color: "#f57c00" }} />; // orange
-    case "fund": // Reserved Fund
-      return <AccountBalanceWalletIcon sx={{ fontSize: 40, color: "#1976d2" }} />; // dark blue
-    default:
-      return <AccountBalanceIcon sx={{ fontSize: 40, color: "#6c757d" }} />; // grey fallback
-  }
-};
-
-
+  const getAccountIcon = (type) => {
+    switch (type?.toLowerCase()) {
+      case "asset":
+        return <AccountBalanceIcon sx={{ fontSize: 42, color: "#2e7d32" }} />;
+      case "party":
+        return <CreditCardIcon sx={{ fontSize: 42, color: "#ef6c00" }} />;
+      case "fund":
+        return <AccountBalanceWalletIcon sx={{ fontSize: 42, color: "#1976d2" }} />;
+      default:
+        return <AccountBalanceIcon sx={{ fontSize: 42, color: "#6c757d" }} />;
+    }
+  };
 
   return (
-    <Box sx={{ p: 3, position: "relative", minHeight: "100vh" }}>
-      {/* Improved Account Card */}
-      {account && (
-        <Paper
-          sx={{
-            p: 3,
-            mb: 3,
-            borderRadius: 3,
-            boxShadow: 4,
-            background: "linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)",
-            position: "relative",
-            overflow: "hidden",
-            transition: "transform 0.2s, box-shadow 0.2s",
-            "&:hover": { transform: "translateY(-4px)", boxShadow: 6 },
-          }}
-        >
-          {/* Floating accent circle */}
-          <Box
+    <Box
+      sx={{
+        p: { xs: 2, sm: 3 },
+        minHeight: "100vh",
+        background: "linear-gradient(to bottom right, #f9fafc, #eef3f7)",
+        pb: 10,
+      }}
+    >
+      {/* Page Header */}
+      <Stack
+        direction="row"
+        justifyContent="space-between"
+        alignItems="center"
+        mb={2}
+      >
+        <Stack direction="row" alignItems="center" spacing={1}>
+          <ReceiptLongIcon
             sx={{
-              position: "absolute",
-              top: -20,
-              right: -20,
-              width: 80,
-              height: 80,
-              borderRadius: "50%",
-              bgcolor: "rgba(255,255,255,0.2)",
+              fontSize: 28,
+              color: "primary.main",
             }}
           />
+          <Typography
+            variant="h5"
+            sx={{
+              fontWeight: 600,
+              fontSize: { xs: "1.3rem", sm: "1.5rem" },
+            }}
+          >
+            Transactions
+          </Typography>
+        </Stack>
 
+        <Button
+          size="small"
+          variant="outlined"
+          onClick={() => setShowFilters((prev) => !prev)}
+          sx={{
+            display: { xs: "none", sm: "inline-flex" },
+            textTransform: "none",
+          }}
+        >
+          {showFilters ? "Hide Filters" : "Show Filters"}
+        </Button>
+      </Stack>
+
+      {/* Account Header */}
+      {account && (
+        <Paper
+          elevation={3}
+          sx={{
+            p: { xs: 2, sm: 3 },
+            mb: 3,
+            borderRadius: 3,
+            background: "linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%)",
+          }}
+        >
           <Stack direction="row" alignItems="center" spacing={2}>
-            {getAccountIcon(account.type)}
+            <Box
+              sx={{
+                width: 55,
+                height: 55,
+                borderRadius: "50%",
+                bgcolor: "white",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                boxShadow: 2,
+              }}
+            >
+              {getAccountIcon(account.type)}
+            </Box>
             <Box>
-              <Typography variant="h5" fontWeight="bold">
+              <Typography variant="h6" fontWeight="bold">
                 {account.name}
               </Typography>
-              <Typography variant="subtitle2" color="text.secondary">
-                Type: {account.type}
+              <Typography variant="body2" color="text.secondary">
+                {account.type}
               </Typography>
             </Box>
           </Stack>
 
           <Typography
-            variant="h4"
+            variant="h5"
             fontWeight="bold"
             color={account.balance >= 0 ? "success.main" : "error.main"}
-            sx={{ mt: 2 }}
+            sx={{ mt: 1 }}
           >
             ₹ {Number(account.balance || 0).toLocaleString()}
           </Typography>
-
         </Paper>
       )}
 
-      {/* Filter Collapse Toggle for Mobile */}
-      <Button
-        variant="outlined"
-        sx={{ mb: 1, display: { xs: "block", sm: "none" } }}
-        fullWidth
-        onClick={() => setShowFilters((prev) => !prev)}
-      >
-        {showFilters ? "Hide Filters" : "Show Filters"}
-      </Button>
-
-      {/* Filters */}
-      <Collapse in={showFilters || window.innerWidth >= 600}>
-        <Paper sx={{ p: 2, mb: 2 }}>
+      {/* Filters (Collapse) */}
+      <Collapse in={showFilters || !isMobile}>
+        <Paper
+          elevation={2}
+          sx={{
+            p: { xs: 1.5, sm: 2 },
+            mb: 2,
+            borderRadius: 2,
+          }}
+        >
           <Typography variant="subtitle1" sx={{ mb: 1 }}>
-            Search Transactions
+            Filter Transactions
           </Typography>
           <Stack
             direction={{ xs: "column", sm: "row" }}
@@ -186,22 +215,22 @@ const getAccountIcon = (type) => {
             flexWrap="wrap"
           >
             <TextField
-              label="From Date"
+              label="From"
               type="date"
               size="small"
               value={fromDate}
               onChange={(e) => setFromDate(e.target.value)}
               InputLabelProps={{ shrink: true }}
-              sx={{ flex: 1, minWidth: 120 }}
+              sx={{ flex: 1 }}
             />
             <TextField
-              label="To Date"
+              label="To"
               type="date"
               size="small"
               value={toDate}
               onChange={(e) => setToDate(e.target.value)}
               InputLabelProps={{ shrink: true }}
-              sx={{ flex: 1, minWidth: 120 }}
+              sx={{ flex: 1 }}
             />
             <TextField
               select
@@ -209,7 +238,7 @@ const getAccountIcon = (type) => {
               size="small"
               value={month}
               onChange={(e) => setMonth(e.target.value)}
-              sx={{ flex: 1, minWidth: 120 }}
+              sx={{ flex: 1 }}
             >
               <MenuItem value="">All</MenuItem>
               {months.map((m) => (
@@ -226,7 +255,7 @@ const getAccountIcon = (type) => {
               size="small"
               value={year}
               onChange={(e) => setYear(e.target.value)}
-              sx={{ flex: 1, minWidth: 120 }}
+              sx={{ flex: 1 }}
             >
               <MenuItem value="">All</MenuItem>
               {years.map((y) => (
@@ -239,57 +268,124 @@ const getAccountIcon = (type) => {
         </Paper>
       </Collapse>
 
-      {/* Transaction Cards */}
+      {/* Transaction List */}
       {filteredTransactions.length === 0 ? (
-        <Typography>No transactions found for this account.</Typography>
+        <Typography
+          sx={{
+            textAlign: "center",
+            color: "text.secondary",
+            mt: 5,
+          }}
+        >
+          No transactions found 💭
+        </Typography>
       ) : (
         <Box
           sx={{
             display: "grid",
             gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" },
-            gap: 2,
+            gap: 1.5,
           }}
         >
-          {filteredTransactions.map((t) => (
-            <Paper
-              key={t.id}
-              sx={{
-                p: 2,
-                borderLeft: `5px solid ${t.type === "credit" ? "green" : "red"}`,
-                boxShadow: 2,
-                borderRadius: 2,
-              }}
-            >
-              <Typography variant="subtitle1" fontWeight="bold">
-                ₹{t.amount} ({t.type})
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                {t.createdAt?.toDate().toLocaleString()}
-              </Typography>
-              {t.note && (
-                <Typography
-                  variant="body2"
-                  sx={{ fontStyle: "italic", mt: 0.5 }}
-                >
-                  📝 {t.note}
-                </Typography>
-              )}
+          {filteredTransactions.map((t, index) => {
+            const isCredit = t.type === "credit";
+            const bgColor = isCredit
+              ? "linear-gradient(135deg, #e8f5e9, #c8e6c9)"
+              : "linear-gradient(135deg, #ffebee, #ffcdd2)";
+            const textColor = isCredit ? "success.main" : "error.main";
 
-              {/* Edit Button */}
-              <Button
-                variant="outlined"
-                size="small"
-                sx={{ mt: 1 }}
-                onClick={() => navigate(`/dashboard/transactions/edit/${t.id}`)}
+            return (
+              <Box
+                key={t.id}
+                sx={{
+                  animation: `fadeIn 0.3s ease ${index * 0.05}s both`,
+                  "@keyframes fadeIn": {
+                    from: { opacity: 0, transform: "translateY(6px)" },
+                    to: { opacity: 1, transform: "translateY(0)" },
+                  },
+                }}
               >
-                Edit
-              </Button>
-            </Paper>
-          ))}
+                <Paper
+                  elevation={2}
+                  sx={{
+                    p: { xs: 1, sm: 1.3 },
+                    borderRadius: 2,
+                    background: bgColor,
+                    borderLeft: `5px solid ${
+                      isCredit ? "#2e7d32" : "#c62828"
+                    }`,
+                    transition: "transform 0.15s ease, box-shadow 0.15s ease",
+                    "&:hover": {
+                      transform: "translateY(-2px)",
+                      boxShadow: "0 4px 10px rgba(0,0,0,0.12)",
+                    },
+                  }}
+                >
+                  <Stack
+                    direction="row"
+                    justifyContent="space-between"
+                    alignItems="flex-start"
+                    spacing={1}
+                  >
+                    <Box sx={{ flex: 1 }}>
+                      <Typography
+                        variant="subtitle1"
+                        fontWeight="bold"
+                        color={textColor}
+                        sx={{
+                          lineHeight: 1.1,
+                          fontSize: { xs: "0.95rem", sm: "1rem" },
+                        }}
+                      >
+                        ₹{Number(t.amount).toLocaleString()}
+                      </Typography>
+                      {t.note && (
+                        <Typography
+                          variant="body2"
+                          sx={{
+                            mt: 0.3,
+                            fontStyle: "italic",
+                            color: "text.secondary",
+                            fontSize: { xs: "0.7rem", sm: "0.8rem" },
+                          }}
+                        >
+                          📝 {t.note}
+                        </Typography>
+                      )}
+                      <Typography
+                        variant="caption"
+                        color="text.secondary"
+                        sx={{
+                          display: "block",
+                          mt: 0.3,
+                          fontSize: { xs: "0.65rem", sm: "0.7rem" },
+                        }}
+                      >
+                        {t.createdAt?.toDate().toLocaleString()}
+                      </Typography>
+                    </Box>
+                    <IconButton
+                      size="small"
+                      sx={{
+                        color: textColor,
+                        p: 0.5,
+                        "&:hover": { bgcolor: "rgba(0,0,0,0.05)" },
+                      }}
+                      onClick={() =>
+                        navigate(`/dashboard/transactions/edit/${t.id}`)
+                      }
+                    >
+                      <EditIcon fontSize="small" />
+                    </IconButton>
+                  </Stack>
+                </Paper>
+              </Box>
+            );
+          })}
         </Box>
       )}
 
-      {/* Floating Action Button */}
+      {/* Floating Add Button */}
       <Fab
         color="primary"
         aria-label="add"
@@ -298,10 +394,12 @@ const getAccountIcon = (type) => {
           position: "fixed",
           bottom: 70,
           right: 24,
-          boxShadow: "0 6px 10px rgba(0,0,0,0.3)",
+          width: { xs: 48, sm: 56 },
+          height: { xs: 48, sm: 56 },
+          boxShadow: "0 6px 15px rgba(0,0,0,0.25)",
         }}
       >
-        <AddIcon />
+        <AddIcon sx={{ fontSize: { xs: 22, sm: 28 } }} />
       </Fab>
     </Box>
   );

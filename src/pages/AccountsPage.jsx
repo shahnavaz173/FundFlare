@@ -14,11 +14,15 @@ import {
   Paper,
   Fab,
   Button,
+  Divider,
+  Fade,
+  useMediaQuery,
 } from "@mui/material";
-import { Add as AddIcon } from "@mui/icons-material";
+import { Add as AddIcon, FilterList } from "@mui/icons-material";
 import { useAuth } from "../context/AuthContext";
 import { listenToAccounts } from "../services/accountService";
 import { useNavigate } from "react-router-dom";
+import { useTheme } from "@mui/material/styles";
 
 export default function AccountsPage() {
   const { user } = useAuth();
@@ -27,6 +31,8 @@ export default function AccountsPage() {
   const [filterType, setFilterType] = useState("");
   const [showFilters, setShowFilters] = useState(false);
   const navigate = useNavigate();
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
 
   useEffect(() => {
     if (!user) return;
@@ -42,33 +48,63 @@ export default function AccountsPage() {
   });
 
   return (
-    <Box sx={{ pb: { xs: 10, sm: 2 }, px: { xs: 2, sm: 4 }, position: "relative" }}>
-      <Stack direction="row" justifyContent="space-between" alignItems="center" mb={2}>
-        <Typography variant="h5">Accounts</Typography>
+    <Box
+      sx={{
+        pb: { xs: 10, sm: 2 },
+        px: { xs: 2, sm: 4 },
+        position: "relative",
+        background: "linear-gradient(to bottom right, #f9f9f9, #eef3f7)",
+        minHeight: "100vh",
+      }}
+    >
+      {/* Header */}
+      <Stack direction="row" justifyContent="space-between" alignItems="center" mb={2} mt={1}>
+        <Typography
+          variant="h5"
+          sx={{ fontWeight: 600, fontSize: { xs: "1.2rem", sm: "1.5rem" } }}
+        >
+          💼 Accounts
+        </Typography>
+        <Button
+          startIcon={<FilterList />}
+          variant="outlined"
+          onClick={() => setShowFilters((prev) => !prev)}
+          sx={{
+            textTransform: "none",
+            fontSize: { xs: "0.7rem", sm: "0.9rem" },
+            px: { xs: 1, sm: 2 },
+            py: { xs: 0.3, sm: 0.7 },
+          }}
+        >
+          {showFilters ? "Hide Filters" : "Show Filters"}
+        </Button>
       </Stack>
 
-      {/* Filters */}
-      <Paper sx={{ p: 2, mb: 2 }}>
-        <Stack direction="row" justifyContent="space-between" alignItems="center">
-          <Typography variant="subtitle1">Filters</Typography>
-          <Button
-            size="small"
-            variant="text"
-            onClick={() => setShowFilters((prev) => !prev)}
+      {/* Filters Section */}
+      <Collapse in={showFilters}>
+        <Paper
+          elevation={3}
+          sx={{
+            p: { xs: 1.5, sm: 3 },
+            mb: 3,
+            borderRadius: 3,
+            backgroundColor: "#fff",
+          }}
+        >
+          <Stack
+            direction={{ xs: "column", sm: "row" }}
+            spacing={2}
+            justifyContent="space-between"
           >
-            {showFilters ? "Hide" : "Show"}
-          </Button>
-        </Stack>
-
-        <Collapse in={showFilters}>
-          <Stack direction={{ xs: "column", sm: "row" }} spacing={2} mt={2}>
             <TextField
-              label="Search by name"
+              label="🔍 Search by name"
+              variant="outlined"
               value={searchName}
               onChange={(e) => setSearchName(e.target.value)}
               fullWidth
+              size={isMobile ? "small" : "medium"}
             />
-            <FormControl fullWidth>
+            <FormControl fullWidth size={isMobile ? "small" : "medium"}>
               <InputLabel>Account Type</InputLabel>
               <Select
                 value={filterType}
@@ -82,38 +118,106 @@ export default function AccountsPage() {
               </Select>
             </FormControl>
           </Stack>
-        </Collapse>
-      </Paper>
+        </Paper>
+      </Collapse>
 
-      {/* Account Cards */}
-      <Stack spacing={2}>
-        {filteredAccounts.length === 0 && (
-          <Typography variant="body2">No accounts found.</Typography>
-        )}
-        {filteredAccounts.map((a) => (
-          <Card
-            key={a.id}
-            sx={{ cursor: "pointer", transition: "0.2s", "&:hover": { boxShadow: 6 } }}
-            onClick={() => navigate(`/dashboard/accounts/${a.id}`)}
-          >
-            <CardContent>
-              <Typography variant="h6">{a.name}</Typography>
-              <Typography variant="body2" color="text.secondary">
-                Type: {a.type} | Balance: ₹ {a.balance ?? 0}
+      <Divider sx={{ mb: 2 }} />
+
+      {/* Account List */}
+      <Fade in>
+        <Stack spacing={isMobile ? 1.2 : 2}>
+          {filteredAccounts.length === 0 ? (
+            <Paper
+              elevation={0}
+              sx={{
+                textAlign: "center",
+                py: 8,
+                color: "text.secondary",
+                background: "transparent",
+              }}
+            >
+              <Typography variant="h6" gutterBottom>
+                No Accounts Found 😕
               </Typography>
-            </CardContent>
-          </Card>
-        ))}
-      </Stack>
+              <Typography variant="body2">
+                Try adjusting your filters or create a new account.
+              </Typography>
+            </Paper>
+          ) : (
+            filteredAccounts.map((a) => (
+              <Card
+                key={a.id}
+                onClick={() => navigate(`/dashboard/accounts/${a.id}`)}
+                elevation={3}
+                sx={{
+                  cursor: "pointer",
+                  borderRadius: 2,
+                  background: "linear-gradient(145deg, #ffffff, #f0f4f8)",
+                  transition: "transform 0.2s ease, box-shadow 0.2s ease",
+                  "&:hover": {
+                    transform: "translateY(-3px)",
+                    boxShadow: "0 6px 16px rgba(0,0,0,0.1)",
+                  },
+                }}
+              >
+                <CardContent
+                  sx={{
+                    p: { xs: 1.2, sm: 2 },
+                    "&:last-child": { pb: { xs: 1.2, sm: 2 } },
+                  }}
+                >
+                  <Stack
+                    direction="row"
+                    justifyContent="space-between"
+                    alignItems="center"
+                  >
+                    <Box>
+                      <Typography
+                        variant={isMobile ? "subtitle1" : "h6"}
+                        sx={{ fontWeight: 600 }}
+                      >
+                        {a.name}
+                      </Typography>
+                      <Typography
+                        variant="body2"
+                        color="text.secondary"
+                        sx={{ fontSize: { xs: "0.75rem", sm: "0.9rem" } }}
+                      >
+                        Type: {a.type}
+                      </Typography>
+                    </Box>
+                    <Typography
+                      variant={isMobile ? "body2" : "subtitle1"}
+                      sx={{
+                        fontWeight: 600,
+                        color: a.balance >= 0 ? "success.main" : "error.main",
+                      }}
+                    >
+                      ₹ {a.balance?.toLocaleString() ?? 0}
+                    </Typography>
+                  </Stack>
+                </CardContent>
+              </Card>
+            ))
+          )}
+        </Stack>
+      </Fade>
 
       {/* Floating Add Button */}
       <Fab
         color="primary"
         aria-label="add"
-        sx={{ position: "fixed", bottom: 70, right: 24 }}
+        sx={{
+          position: "fixed",
+          bottom: 70,
+          right: 24,
+          boxShadow: "0 6px 15px rgba(0,0,0,0.2)",
+          width: { xs: 48, sm: 56 },
+          height: { xs: 48, sm: 56 },
+        }}
         onClick={() => navigate("/dashboard/accounts/add")}
       >
-        <AddIcon />
+        <AddIcon sx={{ fontSize: { xs: 22, sm: 28 } }} />
       </Fab>
     </Box>
   );

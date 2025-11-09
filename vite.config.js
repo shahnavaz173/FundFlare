@@ -2,12 +2,16 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
+const appVersion = new Date().toISOString();
+
 export default defineConfig({
   plugins: [
     react(),
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'robots.txt', 'icons/*.png'],
+      cacheId: `fundflare-${appVersion}`,
+
       manifest: {
         name: 'FundFlare Personal Finance',
         short_name: 'FundFlare',
