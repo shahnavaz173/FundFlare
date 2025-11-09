@@ -17,10 +17,12 @@ import {
   Divider,
   Fade,
   useMediaQuery,
+  IconButton,
+  Tooltip,
 } from "@mui/material";
-import { Add as AddIcon, FilterList } from "@mui/icons-material";
+import { Add as AddIcon, FilterList, Block, Undo } from "@mui/icons-material";
 import { useAuth } from "../context/AuthContext";
-import { listenToAccounts } from "../services/accountService";
+import { listenToAccounts, toggleAccountDisabled } from "../services/accountService";
 import { useNavigate } from "react-router-dom";
 import { useTheme } from "@mui/material/styles";
 
@@ -40,12 +42,25 @@ export default function AccountsPage() {
     return () => unsub && unsub();
   }, [user]);
 
-  // Apply filters
-  const filteredAccounts = accounts.filter((a) => {
-    const matchesName = a.name.toLowerCase().includes(searchName.toLowerCase());
-    const matchesType = filterType ? a.type === filterType : true;
-    return matchesName && matchesType;
-  });
+  // Separate active and disabled accounts
+  const activeAccounts = accounts
+    .filter((a) => !a.disabled)
+    .filter((a) => {
+      const matchesName = a.name.toLowerCase().includes(searchName.toLowerCase());
+      const matchesType = filterType ? a.type === filterType : true;
+      return matchesName && matchesType;
+    });
+
+  const disabledAccounts = accounts
+    .filter((a) => a.disabled)
+    .filter((a) => {
+      const matchesName = a.name.toLowerCase().includes(searchName.toLowerCase());
+      const matchesType = filterType ? a.type === filterType : true;
+      return matchesName && matchesType;
+    });
+
+  // Combine for display (active first, then disabled)
+  const displayedAccounts = [...activeAccounts, ...disabledAccounts];
 
   return (
     <Box
@@ -126,7 +141,7 @@ export default function AccountsPage() {
       {/* Account List */}
       <Fade in>
         <Stack spacing={isMobile ? 1.2 : 2}>
-          {filteredAccounts.length === 0 ? (
+          {displayedAccounts.length === 0 ? (
             <Paper
               elevation={0}
               sx={{
@@ -144,15 +159,17 @@ export default function AccountsPage() {
               </Typography>
             </Paper>
           ) : (
-            filteredAccounts.map((a) => (
+            displayedAccounts.map((a, idx) => (
               <Card
                 key={a.id}
-                onClick={() => navigate(`/dashboard/accounts/${a.id}`)}
                 elevation={3}
                 sx={{
                   cursor: "pointer",
                   borderRadius: 2,
-                  background: "linear-gradient(145deg, #ffffff, #f0f4f8)",
+                  background: a.disabled
+                    ? "linear-gradient(145deg, #f5f5f5, #e0e0e0)"
+                    : "linear-gradient(145deg, #ffffff, #f0f4f8)",
+                  opacity: a.disabled ? 0.6 : 1,
                   transition: "transform 0.2s ease, box-shadow 0.2s ease",
                   "&:hover": {
                     transform: "translateY(-3px)",
@@ -171,7 +188,7 @@ export default function AccountsPage() {
                     justifyContent="space-between"
                     alignItems="center"
                   >
-                    <Box>
+                    <Box onClick={() => navigate(`/dashboard/accounts/${a.id}`)}>
                       <Typography
                         variant={isMobile ? "subtitle1" : "h6"}
                         sx={{ fontWeight: 600 }}
@@ -184,17 +201,31 @@ export default function AccountsPage() {
                         sx={{ fontSize: { xs: "0.75rem", sm: "0.9rem" } }}
                       >
                         Type: {a.type}
+                        {a.disabled && " • Disabled"}
                       </Typography>
                     </Box>
-                    <Typography
-                      variant={isMobile ? "body2" : "subtitle1"}
-                      sx={{
-                        fontWeight: 600,
-                        color: a.balance >= 0 ? "success.main" : "error.main",
-                      }}
-                    >
-                      ₹ {a.balance?.toLocaleString() ?? 0}
-                    </Typography>
+                    <Stack direction="row" alignItems="center" spacing={1}>
+                      <Typography
+                        variant={isMobile ? "body2" : "subtitle1"}
+                        sx={{
+                          fontWeight: 600,
+                          color: a.balance >= 0 ? "success.main" : "error.main",
+                        }}
+                      >
+                        ₹ {a.balance?.toLocaleString() ?? 0}
+                      </Typography>
+                      <Tooltip title={a.disabled ? "Enable Account" : "Disable Account"}>
+                        <IconButton
+                          size="small"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleAccountDisabled(user.uid, a.id, !a.disabled);
+                          }}
+                        >
+                          {a.disabled ? <Undo color="success" /> : <Block color="error" />}
+                        </IconButton>
+                      </Tooltip>
+                    </Stack>
                   </Stack>
                 </CardContent>
               </Card>

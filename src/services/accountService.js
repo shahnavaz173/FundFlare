@@ -1,10 +1,9 @@
-//accountService/.js
-// Firestore-based service for accounts (collection: users/{uid}/accounts)
 import {
   collection,
   doc,
   getDoc,
   addDoc,
+  updateDoc,
   query,
   orderBy,
   onSnapshot,
@@ -16,8 +15,9 @@ export async function addAccount(userId, account) {
   const col = collection(db, "users", userId, "accounts");
   const payload = {
     ...account,
-    type: account.type || "Asset", // default type
+    type: account.type || "Asset",
     createdAt: account.createdAt || serverTimestamp(),
+    disabled: account.disabled || false, // ✅ new field
   };
   const docRef = await addDoc(col, payload);
   return docRef.id;
@@ -38,7 +38,20 @@ export function listenToAccounts(userId, setAccounts) {
     }
   );
   return unsub;
-}export function calculateSummary(accounts) {
+}
+
+// ✅ new helper: enable/disable account
+export async function toggleAccountDisabled(userId, accountId, disabled) {
+  if (!userId || !accountId) return;
+  try {
+    const ref = doc(db, "users", userId, "accounts", accountId);
+    await updateDoc(ref, { disabled });
+  } catch (err) {
+    console.error("toggleAccountDisabled error:", err);
+  }
+}
+
+export function calculateSummary(accounts) {
   const assets = accounts.filter(a => a.type === "Asset");
   const funds = accounts.filter(a => a.type === "Fund");
   const parties = accounts.filter(a => a.type === "Party");
@@ -62,7 +75,7 @@ export function listenToAccounts(userId, setAccounts) {
   const cashAcc = assets.filter(a => ["bank", "cash"].includes(a.name.toLowerCase()));
   const cashBalance = sum(cashAcc);
 
-  const totalFunds = sum(funds); // NEW card
+  const totalFunds = sum(funds);
 
   return {
     totalEverything,
@@ -87,15 +100,6 @@ export async function createDefaultAccounts(userId) {
   }
 }
 
-
-/**
- * Fetch a single account document by id.
- * Returns { id, ...data } or null if not found.
- *
- * @param {string} userId - UID of the user (Firestore path: users/{userId}/accounts/{accountId})
- * @param {string} accountId - ID of the account doc
- * @returns {Promise<Object|null>}
- */
 export async function getAccountById(userId, accountId) {
   if (!userId || !accountId) return null;
   try {

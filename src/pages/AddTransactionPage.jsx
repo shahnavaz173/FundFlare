@@ -54,6 +54,9 @@ export default function AddTransactionPage() {
 
   const selectedAccount = accounts.find((a) => a.id === form.accountId);
 
+  // Filter enabled accounts only
+  const enabledAccounts = accounts.filter((a) => !a.disabled);
+
   // Determine if extra field should be shown
   let showExtraField = false;
   let extraFieldLabel = "";
@@ -143,7 +146,7 @@ export default function AddTransactionPage() {
           }}
         >
           <MenuItem value="">Select account</MenuItem>
-          {accounts.map((a) => (
+          {enabledAccounts.map((a) => (
             <MenuItem key={a.id} value={a.id}>
               {a.name}
             </MenuItem>
@@ -241,7 +244,7 @@ export default function AddTransactionPage() {
             sx={{ mb: 2 }}
           >
             <MenuItem value="">None</MenuItem>
-            {accounts.map((a) => (
+            {enabledAccounts.map((a) => (
               <MenuItem key={a.id} value={a.id}>
                 {a.name}
               </MenuItem>
