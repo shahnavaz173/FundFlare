@@ -68,7 +68,6 @@ export default function AccountsPage() {
         pb: { xs: 10, sm: 2 },
         px: { xs: 2, sm: 4 },
         position: "relative",
-        background: "linear-gradient(to bottom right, #f9f9f9, #eef3f7)",
         minHeight: "100vh",
       }}
     >

@@ -1,29 +1,30 @@
-import { useParams, useNavigate } from "react-router-dom";
+// src/pages/AccountDetailPage.jsx
 import React, { useEffect, useState } from "react";
+import { useParams, useNavigate } from "react-router-dom";
 import {
   Box,
   Typography,
-  Paper,
   Stack,
   Button,
-  Collapse,
-  TextField,
-  MenuItem,
-  Fab,
-  IconButton,
   useMediaQuery,
+  CircularProgress,
+  Snackbar,
+  Alert,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
-import AddIcon from "@mui/icons-material/Add";
-import EditIcon from "@mui/icons-material/Edit";
-import DeleteIcon from "@mui/icons-material/Delete";
 import ReceiptLongIcon from "@mui/icons-material/ReceiptLong";
-import AccountBalanceIcon from "@mui/icons-material/AccountBalance";
-import AccountBalanceWalletIcon from "@mui/icons-material/AccountBalanceWallet";
-import CreditCardIcon from "@mui/icons-material/CreditCard";
+
 import { listenToTransactions, deleteTransaction } from "../services/transactionService";
 import { getAccountById } from "../services/accountService";
 import { useAuth } from "../context/AuthContext";
+
+import AccountHeader from "../components/accountDetail/AccountHeader";
+import FiltersPanel from "../components/accountDetail/FiltersPanel";
+import TransactionsGrid from "../components/accountDetail/TransactionsGrid";
+import AddTransactionFab from "../components/accountDetail/AddTransactionFab";
+
+import { exportAccountStatement } from "../components/accountDetail/pdfExport";
+import PdfViewer from "../components/accountDetail/PdfViewer";
 
 export default function AccountDetailPage() {
   const { id } = useParams();
@@ -42,14 +43,28 @@ export default function AccountDetailPage() {
   const [year, setYear] = useState("");
   const [showFilters, setShowFilters] = useState(false);
 
+  // PDF viewer / exporting
+  const [exporting, setExporting] = useState(false);
+  const [pdfResult, setPdfResult] = useState(null); // { blob, filename }
+  const [viewerOpen, setViewerOpen] = useState(false);
+
+  // Snackbar
+  const [snack, setSnack] = useState({ open: false, severity: "info", message: "" });
+
   useEffect(() => {
     if (!user) return;
 
-    getAccountById(user.uid, id).then(setAccount);
+    // fetch account once
+    getAccountById(user.uid, id).then((acct) => setAccount(acct)).catch((err) => {
+      console.error("Failed to load account:", err);
+      setSnack({ open: true, severity: "error", message: "Failed to load account" });
+    });
+
+    // listen to transactions
     const unsub = listenToTransactions(user.uid, (allTxns) => {
-      const filtered = allTxns
+      const filtered = (allTxns || [])
         .filter((t) => t.accountId === id)
-        .sort((a, b) => b.createdAt?.seconds - a.createdAt?.seconds);
+        .sort((a, b) => b.createdAt?.seconds - a.createdAt?.seconds); // newest first in UI
       setTransactions(filtered);
       setFilteredTransactions(filtered);
     });
@@ -57,32 +72,37 @@ export default function AccountDetailPage() {
     return () => unsub && unsub();
   }, [user, id]);
 
+  // Apply filters to transactions
   useEffect(() => {
     let filtered = [...transactions];
-    if (fromDate)
-      filtered = filtered.filter(
-        (t) => t.createdAt?.toDate() >= new Date(fromDate)
-      );
-    if (toDate)
-      filtered = filtered.filter(
-        (t) => t.createdAt?.toDate() <= new Date(toDate)
-      );
-    if (month)
-      filtered = filtered.filter(
-        (t) => t.createdAt?.toDate().getMonth() + 1 === parseInt(month)
-      );
-    if (year)
-      filtered = filtered.filter(
-        (t) => t.createdAt?.toDate().getFullYear() === parseInt(year)
-      );
+    if (fromDate) {
+      const fd = new Date(fromDate);
+      filtered = filtered.filter((t) => t.createdAt?.toDate() >= fd);
+    }
+    if (toDate) {
+      const td = new Date(toDate);
+      // include the full 'to' day by setting time to 23:59:59 if input is date-only
+      td.setHours(23, 59, 59, 999);
+      filtered = filtered.filter((t) => t.createdAt?.toDate() <= td);
+    }
+    if (month) {
+      const m = parseInt(month, 10);
+      filtered = filtered.filter((t) => t.createdAt?.toDate().getMonth() + 1 === m);
+    }
+    if (year) {
+      const y = parseInt(year, 10);
+      filtered = filtered.filter((t) => t.createdAt?.toDate().getFullYear() === y);
+    }
     setFilteredTransactions(filtered);
   }, [fromDate, toDate, month, year, transactions]);
 
+  // Helpers for filter dropdowns
   const months = Array.from({ length: 12 }, (_, i) => i + 1);
-  const years = Array.from(
-    new Set(transactions.map((t) => t.createdAt?.toDate().getFullYear()))
-  ).sort((a, b) => b - a);
+  const years = Array.from(new Set(transactions.map((t) => t.createdAt?.toDate().getFullYear())))
+    .filter(Boolean)
+    .sort((a, b) => b - a);
 
+  // Transaction actions
   const handleAddTransaction = () => {
     navigate(`/dashboard/transactions/add/${id}`, {
       state: { preselectedAccountId: id },
@@ -90,20 +110,38 @@ export default function AccountDetailPage() {
   };
 
   const handleDeleteTransaction = async (txnId) => {
+    if (!user) return;
     if (!window.confirm("Are you sure you want to delete this transaction?")) return;
-    await deleteTransaction(user.uid, txnId);
+    try {
+      await deleteTransaction(user.uid, txnId);
+      setSnack({ open: true, severity: "success", message: "Transaction deleted" });
+    } catch (err) {
+      console.error("Delete failed:", err);
+      setSnack({ open: true, severity: "error", message: "Failed to delete transaction" });
+    }
   };
 
-  const getAccountIcon = (type) => {
-    switch (type?.toLowerCase()) {
-      case "asset":
-        return <AccountBalanceIcon sx={{ fontSize: 42, color: "#2e7d32" }} />;
-      case "party":
-        return <CreditCardIcon sx={{ fontSize: 42, color: "#ef6c00" }} />;
-      case "fund":
-        return <AccountBalanceWalletIcon sx={{ fontSize: 42, color: "#1976d2" }} />;
-      default:
-        return <AccountBalanceIcon sx={{ fontSize: 42, color: "#6c757d" }} />;
+  // Export -> generate blob and open viewer
+  const handleExportPDF = async () => {
+    if (!account) {
+      setSnack({ open: true, severity: "warning", message: "Account not loaded yet" });
+      return;
+    }
+    try {
+      setExporting(true);
+      const result = await exportAccountStatement({ account, filteredTransactions, user });
+      if (result && result.blob) {
+        setPdfResult(result);
+        setViewerOpen(true);
+      } else {
+        console.warn("exportAccountStatement returned no blob");
+        setSnack({ open: true, severity: "error", message: "Failed to prepare statement" });
+      }
+    } catch (err) {
+      console.error("Failed to generate PDF:", err);
+      setSnack({ open: true, severity: "error", message: "Failed to generate statement" });
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -116,312 +154,120 @@ export default function AccountDetailPage() {
         pb: 10,
       }}
     >
-      {/* Page Header */}
+      {/* Header */}
       <Stack
-        direction="row"
+        direction={isMobile ? "column" : "row"}
         justifyContent="space-between"
-        alignItems="center"
+        alignItems={isMobile ? "stretch" : "center"}
         mb={2}
+        spacing={isMobile ? 1 : 0}
       >
         <Stack direction="row" alignItems="center" spacing={1}>
-          <ReceiptLongIcon
-            sx={{
-              fontSize: 28,
-              color: "primary.main",
-            }}
-          />
+          <ReceiptLongIcon sx={{ fontSize: 28, color: "primary.main" }} />
           <Typography
             variant="h5"
             sx={{
               fontWeight: 600,
-              fontSize: { xs: "1.3rem", sm: "1.5rem" },
+              fontSize: { xs: "1.15rem", sm: "1.5rem" },
             }}
           >
             Transactions
           </Typography>
         </Stack>
 
-        <Button
-          size="small"
-          variant="outlined"
-          onClick={() => setShowFilters((prev) => !prev)}
-          sx={{
-            display: { xs: "none", sm: "inline-flex" },
-            textTransform: "none",
-          }}
-        >
-          {showFilters ? "Hide Filters" : "Show Filters"}
-        </Button>
-      </Stack>
-
-      {/* Account Header */}
-      {account && (
-        <Paper
-          elevation={3}
-          sx={{
-            p: { xs: 2, sm: 3 },
-            mb: 3,
-            borderRadius: 3,
-            background: "linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%)",
-          }}
-        >
-          <Stack direction="row" alignItems="center" spacing={2}>
-            <Box
-              sx={{
-                width: 55,
-                height: 55,
-                borderRadius: "50%",
-                bgcolor: "white",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                boxShadow: 2,
-              }}
-            >
-              {getAccountIcon(account.type)}
-            </Box>
-            <Box>
-              <Typography variant="h6" fontWeight="bold">
-                {account.name}
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                {account.type}
-              </Typography>
-            </Box>
-          </Stack>
-
-          <Typography
-            variant="h5"
-            fontWeight="bold"
-            color={account.balance >= 0 ? "success.main" : "error.main"}
-            sx={{ mt: 1 }}
-          >
-            ₹ {Number(account.balance || 0).toLocaleString()}
-          </Typography>
-        </Paper>
-      )}
-
-      {/* Filters */}
-      <Collapse in={showFilters || !isMobile}>
-        <Paper
-          elevation={2}
-          sx={{
-            p: { xs: 1.5, sm: 2 },
-            mb: 2,
-            borderRadius: 2,
-          }}
-        >
-          <Typography variant="subtitle1" sx={{ mb: 1 }}>
-            Filter Transactions
-          </Typography>
-          <Stack
-            direction={{ xs: "column", sm: "row" }}
-            spacing={2}
-            flexWrap="wrap"
-          >
-            <TextField
-              label="From"
-              type="date"
-              size="small"
-              value={fromDate}
-              onChange={(e) => setFromDate(e.target.value)}
-              InputLabelProps={{ shrink: true }}
-              sx={{ flex: 1 }}
-            />
-            <TextField
-              label="To"
-              type="date"
-              size="small"
-              value={toDate}
-              onChange={(e) => setToDate(e.target.value)}
-              InputLabelProps={{ shrink: true }}
-              sx={{ flex: 1 }}
-            />
-            <TextField
-              select
-              label="Month"
-              size="small"
-              value={month}
-              onChange={(e) => setMonth(e.target.value)}
-              sx={{ flex: 1 }}
-            >
-              <MenuItem value="">All</MenuItem>
-              {months.map((m) => (
-                <MenuItem key={m} value={m}>
-                  {new Date(0, m - 1).toLocaleString("default", {
-                    month: "long",
-                  })}
-                </MenuItem>
-              ))}
-            </TextField>
-            <TextField
-              select
-              label="Year"
-              size="small"
-              value={year}
-              onChange={(e) => setYear(e.target.value)}
-              sx={{ flex: 1 }}
-            >
-              <MenuItem value="">All</MenuItem>
-              {years.map((y) => (
-                <MenuItem key={y} value={y}>
-                  {y}
-                </MenuItem>
-              ))}
-            </TextField>
-          </Stack>
-        </Paper>
-      </Collapse>
-
-      {/* Transaction List */}
-      {filteredTransactions.length === 0 ? (
-        <Typography
-          sx={{
-            textAlign: "center",
-            color: "text.secondary",
-            mt: 5,
-          }}
-        >
-          No transactions found 💭
-        </Typography>
-      ) : (
         <Box
           sx={{
-            display: "grid",
-            gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" },
-            gap: 1.5,
+            display: "flex",
+            gap: 1,
+            mt: isMobile ? 1 : 0,
+            alignSelf: isMobile ? "flex-start" : "auto",
+            flexWrap: "wrap",
           }}
         >
-          {filteredTransactions.map((t, index) => {
-            const isCredit = t.type === "credit";
-            const bgColor = isCredit
-              ? "linear-gradient(135deg, #e8f5e9, #c8e6c9)"
-              : "linear-gradient(135deg, #ffebee, #ffcdd2)";
-            const textColor = isCredit ? "success.main" : "error.main";
+          <Button
+            size="small"
+            variant="outlined"
+            onClick={() => setShowFilters((prev) => !prev)}
+            sx={{ textTransform: "none" }}
+          >
+            {showFilters ? "Hide Filters" : "Show Filters"}
+          </Button>
 
-            return (
-              <Box
-                key={t.id}
-                sx={{
-                  animation: `fadeIn 0.3s ease ${index * 0.05}s both`,
-                  "@keyframes fadeIn": {
-                    from: { opacity: 0, transform: "translateY(6px)" },
-                    to: { opacity: 1, transform: "translateY(0)" },
-                  },
-                }}
-              >
-                <Paper
-                  elevation={2}
-                  sx={{
-                    p: { xs: 1, sm: 1.3 },
-                    borderRadius: 2,
-                    background: bgColor,
-                    borderLeft: `5px solid ${
-                      isCredit ? "#2e7d32" : "#c62828"
-                    }`,
-                    transition: "transform 0.15s ease, box-shadow 0.15s ease",
-                    "&:hover": {
-                      transform: "translateY(-2px)",
-                      boxShadow: "0 4px 10px rgba(0,0,0,0.12)",
-                    },
-                  }}
-                >
-                  <Stack
-                    direction="row"
-                    justifyContent="space-between"
-                    alignItems="flex-start"
-                    spacing={1}
-                  >
-                    <Box sx={{ flex: 1 }}>
-                      <Typography
-                        variant="subtitle1"
-                        fontWeight="bold"
-                        color={textColor}
-                        sx={{
-                          lineHeight: 1.1,
-                          fontSize: { xs: "0.95rem", sm: "1rem" },
-                        }}
-                      >
-                        ₹{Number(t.amount).toLocaleString()}
-                      </Typography>
-                      {t.note && (
-                        <Typography
-                          variant="body2"
-                          sx={{
-                            mt: 0.3,
-                            fontStyle: "italic",
-                            color: "text.secondary",
-                            fontSize: { xs: "0.7rem", sm: "0.8rem" },
-                          }}
-                        >
-                          📝 {t.note}
-                        </Typography>
-                      )}
-                      <Typography
-                        variant="caption"
-                        color="text.secondary"
-                        sx={{
-                          display: "block",
-                          mt: 0.3,
-                          fontSize: { xs: "0.65rem", sm: "0.7rem" },
-                        }}
-                      >
-                        {t.createdAt?.toDate().toLocaleString()}
-                      </Typography>
-                    </Box>
-
-                    <Stack direction="row" spacing={0.5}>
-                      <IconButton
-                        size="small"
-                        sx={{
-                          color: textColor,
-                          p: 0.5,
-                          "&:hover": { bgcolor: "rgba(0,0,0,0.05)" },
-                        }}
-                        onClick={() =>
-                          navigate(`/dashboard/transactions/edit/${t.id}`)
-                        }
-                      >
-                        <EditIcon fontSize="small" />
-                      </IconButton>
-
-                      {/* 🗑️ Delete Button */}
-                      <IconButton
-                        size="small"
-                        sx={{
-                          color: "error.main",
-                          p: 0.5,
-                          "&:hover": { bgcolor: "rgba(255,0,0,0.08)" },
-                        }}
-                        onClick={() => handleDeleteTransaction(t.id)}
-                      >
-                        <DeleteIcon fontSize="small" />
-                      </IconButton>
-                    </Stack>
-                  </Stack>
-                </Paper>
-              </Box>
-            );
-          })}
+          <Button
+            size="small"
+            variant="contained"
+            color="primary"
+            startIcon={
+              exporting ? (
+                <CircularProgress size={18} thickness={5} />
+              ) : (
+                <ReceiptLongIcon />
+              )
+            }
+            onClick={handleExportPDF}
+            sx={{ textTransform: "none" }}
+            disabled={exporting}
+          >
+            {exporting ? "Preparing..." : "View Statement"}
+          </Button>
         </Box>
-      )}
+      </Stack>
 
-      {/* Floating Add Button */}
-      <Fab
-        color="primary"
-        aria-label="add"
-        onClick={handleAddTransaction}
-        sx={{
-          position: "fixed",
-          bottom: 70,
-          right: 24,
-          width: { xs: 48, sm: 56 },
-          height: { xs: 48, sm: 56 },
-          boxShadow: "0 6px 15px rgba(0,0,0,0.25)",
+      {/* Account header */}
+      <AccountHeader account={account} isMobile={isMobile} />
+
+      {/* Filters */}
+      <FiltersPanel
+        showFilters={showFilters}
+        isMobile={isMobile}
+        fromDate={fromDate}
+        toDate={toDate}
+        month={month}
+        year={year}
+        setFromDate={setFromDate}
+        setToDate={setToDate}
+        setMonth={setMonth}
+        setYear={setYear}
+        months={months}
+        years={years}
+      />
+
+      {/* Transactions list */}
+      <TransactionsGrid
+        filteredTransactions={filteredTransactions}
+        onEdit={(txnId) => navigate(`/dashboard/transactions/edit/${txnId}`)}
+        onDelete={handleDeleteTransaction}
+      />
+
+      {/* Floating add button */}
+      <AddTransactionFab onClick={handleAddTransaction} />
+
+      {/* Pdf Viewer Dialog */}
+      <PdfViewer
+        open={viewerOpen}
+        onClose={() => {
+          setViewerOpen(false);
+          // free blob if you want
+          setPdfResult(null);
         }}
+        pdfResult={pdfResult}
+      />
+
+      {/* Snackbar for quick messages */}
+      <Snackbar
+        open={snack.open}
+        autoHideDuration={4000}
+        onClose={() => setSnack((s) => ({ ...s, open: false }))}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
       >
-        <AddIcon sx={{ fontSize: { xs: 22, sm: 28 } }} />
-      </Fab>
+        <Alert
+          onClose={() => setSnack((s) => ({ ...s, open: false }))}
+          severity={snack.severity}
+          sx={{ width: "100%" }}
+        >
+          {snack.message}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 }
