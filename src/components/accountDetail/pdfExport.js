@@ -1,4 +1,4 @@
-// pdfExport.js
+// src/components/accountDetail/pdfExport.js
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
@@ -31,15 +31,6 @@ const fmtDate = (d) => {
   }
 };
 
-const fmtTime = (d) => {
-  try {
-    const dt = new Date(d);
-    return dt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  } catch {
-    return "-";
-  }
-};
-
 async function loadImageDataUrl(url) {
   if (!url) throw new Error("No URL");
   try {
@@ -58,6 +49,51 @@ async function loadImageDataUrl(url) {
 }
 
 /**
+ * Compute effective update type ("credit"/"debit") for viewedAccountId.
+ * Mirrors transactionService logic.
+ */
+function computeEffectiveTypeForAccount(txn, viewedAccountId) {
+  if (!txn || !viewedAccountId) return (txn?.type || null);
+
+  // If viewed account is the primary (txn.accountId), effect is txn.type
+  if (txn.accountId === viewedAccountId) {
+    return (txn.type || "").toLowerCase();
+  }
+
+  // If viewed account is the extra (secondary) account, compute effect on it
+  if (txn.extraAccountId === viewedAccountId) {
+    const accountType = (txn.accountType || "").toLowerCase();
+    const accountName = (txn.accountName || "").toLowerCase();
+    const txnType = (txn.type || "").toLowerCase();
+
+    if (accountName === "investment") {
+      // addTransaction: credit -> extra debit, debit -> extra credit
+      if (txnType === "credit") return "debit";
+      if (txnType === "debit") return "credit";
+      return txnType || null;
+    }
+
+    if (accountType === "party") {
+      // addTransaction: credit -> extra credit, debit -> extra debit
+      if (txnType === "credit") return "credit";
+      if (txnType === "debit") return "debit";
+      return txnType || null;
+    }
+
+    if (accountType === "fund" && txnType === "credit") {
+      // addTransaction: credit -> extra debit
+      return "debit";
+    }
+
+    // fallback to txn.type
+    return txnType || null;
+  }
+
+  // Not related to viewed account — fallback
+  return (txn.type || "").toLowerCase();
+}
+
+/**
  * Export account statement to PDF and return a Blob (no direct download).
  * Returns: { blob: Blob, filename: string }
  *
@@ -71,24 +107,53 @@ export async function exportAccountStatement({
 }) {
   if (!account) return null;
 
+  const viewedAccountId = account.id || account.accountId || null;
   const acctName = sanitize(account.name || "Account");
   const acctType = sanitize(account.type || "-");
 
+  // Build txns with the fields we need
   const txns = [...filteredTransactions]
     .map((t) => ({
       id: t.id,
       dateObj: t.createdAt?.toDate ? t.createdAt.toDate() : new Date(),
       remark: sanitize(t.note || t.remark || t.description || "-"),
-      category: sanitize(t.category || t.categoryName || t.payee || "-"),
+      // category removed intentionally (user requested)
       type: (t.type || "").toLowerCase(),
       amount: Number(t.amount || 0),
+      accountId: t.accountId || null,         // primary account id
+      extraAccountId: t.extraAccountId || null, // secondary account id
+      accountType: t.accountType || null,     // type info (for extra logic)
+      accountName: t.accountName || null,     // primary account name (used for remark)
     }))
     .sort((a, b) => a.dateObj - b.dateObj); // oldest first
 
-  const totalCashIn = txns.filter((t) => t.type === "credit").reduce((s, t) => s + t.amount, 0);
-  const totalCashOut = txns.filter((t) => t.type === "debit").reduce((s, t) => s + t.amount, 0);
+  // Compute effective type for viewed account and adjust remark when viewed is secondary
+  const txnsWithEffective = txns.map((t) => {
+    const effectiveType = computeEffectiveTypeForAccount(t, viewedAccountId);
 
-  const firstRemark = txns[0]?.remark?.toLowerCase() ?? "";
+    // Determine display remark:
+    // If viewed account is the secondary (extraAccountId === viewedAccountId),
+    // append primary account name (from txn.accountName or fallback to id).
+    const isSecondaryView = t.extraAccountId === viewedAccountId;
+    const primaryName = t.accountName || t.accountId || "";
+    const baseRemark = t.remark || "";
+    const displayRemark = isSecondaryView
+      ? (baseRemark ? `${baseRemark} (${primaryName})` : `(${primaryName})`)
+      : baseRemark;
+
+    return { ...t, effectiveType, displayRemark };
+  });
+
+  // Totals based on effective types
+  const totalCashIn = txnsWithEffective
+    .filter((t) => t.effectiveType === "credit")
+    .reduce((s, t) => s + t.amount, 0);
+
+  const totalCashOut = txnsWithEffective
+    .filter((t) => t.effectiveType === "debit")
+    .reduce((s, t) => s + t.amount, 0);
+
+  const firstRemark = txnsWithEffective[0]?.displayRemark?.toLowerCase() ?? "";
   const hasOpeningMarker = firstRemark.includes("balance") || firstRemark.includes("opening");
   const netChange = totalCashIn - totalCashOut;
 
@@ -104,16 +169,16 @@ export async function exportAccountStatement({
     openingBalance = 0;
   }
 
+  // Build table rows using effectiveType for balance calculations
   let running = openingBalance;
-  const tableRows = txns.map((t, idx) => {
-    const debit = t.type === "debit" ? t.amount : 0;
-    const credit = t.type === "credit" ? t.amount : 0;
+  const tableRows = txnsWithEffective.map((t, idx) => {
+    const debit = t.effectiveType === "debit" ? t.amount : 0;
+    const credit = t.effectiveType === "credit" ? t.amount : 0;
     running = Number((running + credit - debit).toFixed(2));
     return {
       idx: idx + 1,
       date: fmtDate(t.dateObj),
-      remark: t.remark,
-      category: t.category,
+      remark: t.displayRemark,
       cashIn: credit,
       cashOut: debit,
       balance: running,
@@ -125,7 +190,6 @@ export async function exportAccountStatement({
       idx: 1,
       date: "-",
       remark: "No transactions in the selected range",
-      category: "-",
       cashIn: 0,
       cashOut: 0,
       balance: openingBalance,
@@ -150,7 +214,6 @@ export async function exportAccountStatement({
   const body = tableRows.map((r) => [
     r.date,
     r.remark,
-    r.category,
     r.cashIn > 0 ? `${CURRENCY} ${fmt(r.cashIn)}` : "-",
     r.cashOut > 0 ? `${CURRENCY} ${fmt(r.cashOut)}` : "-",
     `${CURRENCY} ${fmt(r.balance)}`,
@@ -160,7 +223,7 @@ export async function exportAccountStatement({
 
   autoTable(doc, {
     startY: tableStartY,
-    head: [["Date", "Remark", "Category", "Cash in", "Cash out", "Balance"]],
+    head: [["Date", "Remark", "Cash in", "Cash out", "Balance"]],
     body,
     styles: {
       fontSize: 10,
@@ -176,23 +239,22 @@ export async function exportAccountStatement({
     },
     alternateRowStyles: { fillColor: [250, 250, 252] },
     columnStyles: {
-      0: { cellWidth: 70 }, // Date
-      1: { cellWidth: 220 }, // Remark
-      2: { cellWidth: 100 }, // Category
-      3: { cellWidth: 80, halign: "right" }, // Cash in
-      4: { cellWidth: 80, halign: "right" }, // Cash out
-      5: { cellWidth: 90, halign: "right" }, // Balance
+      0: { cellWidth: 70 },  // Date
+      1: { cellWidth: 300 }, // Remark (wider now)
+      2: { cellWidth: 80, halign: "right" }, // Cash in
+      3: { cellWidth: 80, halign: "right" }, // Cash out
+      4: { cellWidth: 90, halign: "right" }, // Balance
     },
     margin: { left: margin.left, right: margin.right, top: tableStartY, bottom: margin.bottom },
     didParseCell: function (data) {
       if (data.section === "body") {
         const colIdx = data.column.index;
         const cellText = data.cell.text && data.cell.text[0] ? String(data.cell.text[0]) : "";
-        if (colIdx === 3 && cellText !== "-") {
+        if (colIdx === 2 && cellText !== "-") {
           data.cell.styles.textColor = [11, 150, 83]; // green
-        } else if (colIdx === 4 && cellText !== "-") {
+        } else if (colIdx === 3 && cellText !== "-") {
           data.cell.styles.textColor = [219, 68, 55]; // red
-        } else if (colIdx === 5) {
+        } else if (colIdx === 4) {
           data.cell.styles.textColor = [40, 40, 40];
         }
       }
@@ -335,10 +397,10 @@ export async function exportAccountStatement({
     doc.text(line, margin.left, finalY + 14 + i * 12);
   });
 
-  const safeName = ( acctName).replace(/[^\w\s-]/g, "").replace(/\s+/g, "_");
+  const safeName = (acctName).replace(/[^\w\s-]/g, "").replace(/\s+/g, "_");
   const filename = `${safeName}_Statement.pdf`;
 
   // Return a blob instead of saving directly
-  const blob = doc.output("blob"); // jsPDF supports 'blob'
+  const blob = doc.output("blob");
   return { blob, filename };
 }

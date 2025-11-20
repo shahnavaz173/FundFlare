@@ -2,7 +2,13 @@ import React from "react";
 import { Box, Typography } from "@mui/material";
 import TransactionCard from "./TransactionCard";
 
-export default function TransactionsGrid({ filteredTransactions, onEdit, onDelete }) {
+export default function TransactionsGrid({
+  filteredTransactions,
+  currentAccountId,
+  accountsMap,
+  onEdit,
+  onDelete,
+}) {
   if (!filteredTransactions || filteredTransactions.length === 0) {
     return <Typography sx={{ textAlign: "center", color: "text.secondary", mt: 5 }}>No transactions found 💭</Typography>;
   }
@@ -16,7 +22,15 @@ export default function TransactionsGrid({ filteredTransactions, onEdit, onDelet
       }}
     >
       {filteredTransactions.map((t, index) => (
-        <TransactionCard key={t.id} t={t} index={index} onEdit={onEdit} onDelete={onDelete} />
+        <TransactionCard
+          key={t.id}
+          t={t}
+          index={index}
+          currentAccountId={currentAccountId}
+          accountsMap={accountsMap}
+          onEdit={onEdit}
+          onDelete={onDelete}
+        />
       ))}
     </Box>
   );

@@ -1,5 +1,4 @@
-// src/pages/AccountDetailPage.jsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   Box,
@@ -15,7 +14,7 @@ import { useTheme } from "@mui/material/styles";
 import ReceiptLongIcon from "@mui/icons-material/ReceiptLong";
 
 import { listenToTransactions, deleteTransaction } from "../services/transactionService";
-import { getAccountById } from "../services/accountService";
+import { getAccountById, listenToAccounts } from "../services/accountService";
 import { useAuth } from "../context/AuthContext";
 
 import AccountHeader from "../components/accountDetail/AccountHeader";
@@ -34,6 +33,7 @@ export default function AccountDetailPage() {
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
 
   const [account, setAccount] = useState(null);
+  const [accounts, setAccounts] = useState([]); // new: all accounts list
   const [transactions, setTransactions] = useState([]);
   const [filteredTransactions, setFilteredTransactions] = useState([]);
 
@@ -61,16 +61,33 @@ export default function AccountDetailPage() {
     });
 
     // listen to transactions
-    const unsub = listenToTransactions(user.uid, (allTxns) => {
+    const unsubTx = listenToTransactions(user.uid, (allTxns) => {
       const filtered = (allTxns || [])
-        .filter((t) => t.accountId === id)
-        .sort((a, b) => b.createdAt?.seconds - a.createdAt?.seconds); // newest first in UI
+        .filter((t) => t.accountId === id || t.extraAccountId === id)
+        .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)); // newest first in UI
       setTransactions(filtered);
       setFilteredTransactions(filtered);
     });
 
-    return () => unsub && unsub();
+    // listen to accounts so we can show account names (used when showing counterparty/primary name)
+    const unsubAcc = listenToAccounts(user.uid, (items) => {
+      setAccounts(items || []);
+    });
+
+    return () => {
+      unsubTx && unsubTx();
+      unsubAcc && unsubAcc();
+    };
   }, [user, id]);
+
+  // map of accounts for quick lookup
+  const accountsMap = useMemo(() => {
+    const m = {};
+    (accounts || []).forEach((a) => {
+      if (a && a.id) m[a.id] = a;
+    });
+    return m;
+  }, [accounts]);
 
   // Apply filters to transactions
   useEffect(() => {
@@ -81,7 +98,6 @@ export default function AccountDetailPage() {
     }
     if (toDate) {
       const td = new Date(toDate);
-      // include the full 'to' day by setting time to 23:59:59 if input is date-only
       td.setHours(23, 59, 59, 999);
       filtered = filtered.filter((t) => t.createdAt?.toDate() <= td);
     }
@@ -235,6 +251,8 @@ export default function AccountDetailPage() {
       {/* Transactions list */}
       <TransactionsGrid
         filteredTransactions={filteredTransactions}
+        currentAccountId={id}
+        accountsMap={accountsMap}
         onEdit={(txnId) => navigate(`/dashboard/transactions/edit/${txnId}`)}
         onDelete={handleDeleteTransaction}
       />
