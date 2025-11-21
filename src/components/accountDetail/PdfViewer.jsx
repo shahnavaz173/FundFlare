@@ -1,5 +1,5 @@
 // components/accountDetail/PdfViewer.jsx
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, useMemo } from "react";
 import {
   Dialog,
   DialogTitle,
@@ -23,9 +23,12 @@ import NavigateNextIcon from "@mui/icons-material/NavigateNext";
 
 import { Document, Page, pdfjs } from "react-pdf";
 
-// your bundled worker import (you said this works)
+// ---- IMPORTANT: worker must match pdfjs version used by react-pdf ----
 import workerSrc from "pdfjs-dist/build/pdf.worker.mjs?url";
 pdfjs.GlobalWorkerOptions.workerSrc = workerSrc;
+
+// OPTIONAL: if you want annotations styled (links, etc.) uncomment this:
+// import "react-pdf/dist/esm/Page/AnnotationLayer.css";
 
 export default function PdfViewer({ open, onClose, pdfResult }) {
   const [objectUrl, setObjectUrl] = useState(null);
@@ -35,8 +38,16 @@ export default function PdfViewer({ open, onClose, pdfResult }) {
   const [renderError, setRenderError] = useState(null);
 
   const contentRef = useRef(null);
-  const pageContainerRef = useRef(null);
   const [availableWidth, setAvailableWidth] = useState(800);
+
+  // ---- Memoized options (fixes "options changed" warning) ----
+  const documentOptions = useMemo(
+    () => ({
+      cMapUrl: `https://unpkg.com/pdfjs-dist@${pdfjs.version}/cmaps/`,
+      cMapPacked: true,
+    }),
+    []
+  );
 
   // Create / revoke object URL for pdf blob
   useEffect(() => {
@@ -46,16 +57,17 @@ export default function PdfViewer({ open, onClose, pdfResult }) {
       return () => {
         try {
           URL.revokeObjectURL(url);
-        } catch {}
+        } catch {
+          // ignore
+        }
         setObjectUrl(null);
       };
     } else {
       setObjectUrl(null);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pdfResult]);
 
-  // Better width measurement using getBoundingClientRect (handles transforms/padding)
+  // Measure available width for page rendering
   useEffect(() => {
     if (!contentRef.current) return;
     const el = contentRef.current;
@@ -64,7 +76,6 @@ export default function PdfViewer({ open, onClose, pdfResult }) {
       try {
         const rect = el.getBoundingClientRect();
         const raw = rect.width;
-        // subtract some safe padding so the page fits comfortably
         const padded = Math.max(200, raw - 48);
         setAvailableWidth(padded);
       } catch {
@@ -82,15 +93,22 @@ export default function PdfViewer({ open, onClose, pdfResult }) {
       window.addEventListener("resize", update);
       return () => window.removeEventListener("resize", update);
     }
-  }, [contentRef, open]);
+  }, [open]);
 
-  // reset states when a new PDF loads
+  // Reset viewer state when a new PDF loads
   useEffect(() => {
     setPage(1);
     setNumPages(null);
     setZoomMultiplier(1);
     setRenderError(null);
   }, [objectUrl]);
+
+  // Also reset to page 1 whenever dialog is opened
+  useEffect(() => {
+    if (open) {
+      setPage(1);
+    }
+  }, [open]);
 
   const handleDownload = () => {
     if (!pdfResult?.blob) return;
@@ -110,7 +128,8 @@ export default function PdfViewer({ open, onClose, pdfResult }) {
 
   const onDocumentLoadSuccess = ({ numPages: np }) => {
     setNumPages(np);
-    setPage(1);
+    // Make sure current page is within bounds
+    setPage((p) => (p > np ? np : p < 1 ? 1 : p));
     setRenderError(null);
   };
 
@@ -122,16 +141,47 @@ export default function PdfViewer({ open, onClose, pdfResult }) {
   const zoomIn = () => setZoomMultiplier((s) => Math.min(3, +(s + 0.2).toFixed(2)));
   const zoomOut = () => setZoomMultiplier((s) => Math.max(0.6, +(s - 0.2).toFixed(2)));
   const fitWidth = () => setZoomMultiplier(1);
-  const goPrev = () => setPage((p) => Math.max(1, p - 1));
-  const goNext = () => setPage((p) => Math.min(numPages || 1, p + 1));
 
-  // Decide page render width: clamp so it never becomes tiny or absurdly huge
+  const goPrev = () =>
+    setPage((p) => {
+      const np = numPages || 1;
+      return Math.max(1, Math.min(np, p - 1));
+    });
+
+  const goNext = () =>
+    setPage((p) => {
+      const np = numPages || 1;
+      return Math.max(1, Math.min(np, p + 1));
+    });
+
+  // Decide page render width: clamp so it never becomes tiny or huge
   const rawWidth = Math.round(availableWidth * zoomMultiplier);
-  const pageRenderWidth = Math.min(Math.max(rawWidth, 420), 1200); // clamp between 420 and 1200 px
+  const pageRenderWidth = Math.min(Math.max(rawWidth, 420), 1200);
+
+  // Helper: safe page setter from input
+  const handlePageInputChange = (e) => {
+    const value = e.target.value;
+    if (value === "") {
+      setPage(1);
+      return;
+    }
+    const v = Number(value);
+    if (isNaN(v)) return;
+    const np = numPages || 1;
+    const clamped = Math.max(1, Math.min(np, v));
+    setPage(clamped);
+  };
 
   return (
     <Dialog fullWidth maxWidth="xl" open={open} onClose={onClose}>
-      <DialogTitle sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 1 }}>
+      <DialogTitle
+        sx={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 1,
+        }}
+      >
         <Typography variant="h6">View Statement</Typography>
 
         <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
@@ -160,13 +210,23 @@ export default function PdfViewer({ open, onClose, pdfResult }) {
           </Tooltip>
 
           <Tooltip title="Previous page">
-            <IconButton onClick={goPrev} size="small" aria-label="prev-page">
+            <IconButton
+              onClick={goPrev}
+              size="small"
+              aria-label="prev-page"
+              disabled={!numPages || page <= 1}
+            >
               <NavigateBeforeIcon />
             </IconButton>
           </Tooltip>
 
           <Tooltip title="Next page">
-            <IconButton onClick={goNext} size="small" aria-label="next-page">
+            <IconButton
+              onClick={goNext}
+              size="small"
+              aria-label="next-page"
+              disabled={!numPages || page >= (numPages || 1)}
+            >
               <NavigateNextIcon />
             </IconButton>
           </Tooltip>
@@ -186,12 +246,10 @@ export default function PdfViewer({ open, onClose, pdfResult }) {
           <Box sx={{ display: "flex", alignItems: "center", gap: 1, ml: "auto" }}>
             <TextField
               size="small"
+              type="number"
               value={page}
-              onChange={(e) => {
-                const v = Number(e.target.value || 1);
-                if (!isNaN(v)) setPage(Math.max(1, Math.min(numPages || 1, v)));
-              }}
-              inputProps={{ style: { width: 56, textAlign: "center" } }}
+              onChange={handlePageInputChange}
+              inputProps={{ style: { width: 56, textAlign: "center" }, min: 1 }}
             />
             <Typography variant="body2">/ {numPages || "-"}</Typography>
           </Box>
@@ -230,15 +288,15 @@ export default function PdfViewer({ open, onClose, pdfResult }) {
 
           {objectUrl && !renderError && (
             <Document
+              key={objectUrl} // force remount when new file
               file={objectUrl}
               onLoadSuccess={onDocumentLoadSuccess}
               onLoadError={onDocumentLoadError}
               loading={<CircularProgress />}
               error={null}
-              options={{ cMapUrl: `https://unpkg.com/pdfjs-dist@${pdfjs.version}/cmaps/`, cMapPacked: true }}
+              options={documentOptions}
             >
               <Box
-                ref={pageContainerRef}
                 sx={{
                   width: pageRenderWidth,
                   boxShadow: 3,
@@ -248,20 +306,30 @@ export default function PdfViewer({ open, onClose, pdfResult }) {
                 }}
               >
                 <Page
+                  key={page} // force rerender when page changes
                   pageNumber={page}
                   width={pageRenderWidth}
                   renderTextLayer={false}
-                  renderAnnotationLayer={true}
-                  loading={<Box sx={{ p: 6, textAlign: "center" }}><CircularProgress /></Box>}
+                  // Set this to false if you don't import AnnotationLayer.css
+                  renderAnnotationLayer={false}
+                  loading={
+                    <Box sx={{ p: 6, textAlign: "center" }}>
+                      <CircularProgress />
+                    </Box>
+                  }
                 />
               </Box>
             </Document>
           )}
 
-          {renderError && (
+          {renderError && objectUrl && (
             <Box sx={{ textAlign: "center", p: 3 }}>
               <Typography color="error">Preview failed: {String(renderError)}</Typography>
-              <Button variant="outlined" onClick={() => window.open(objectUrl, "_blank")} sx={{ mt: 2 }}>
+              <Button
+                variant="outlined"
+                onClick={() => window.open(objectUrl, "_blank")}
+                sx={{ mt: 2 }}
+              >
                 Open in new tab
               </Button>
             </Box>
