@@ -23,7 +23,6 @@ import TransactionsGrid from "../components/accountDetail/TransactionsGrid";
 import AddTransactionFab from "../components/accountDetail/AddTransactionFab";
 
 import { exportAccountStatement } from "../components/accountDetail/pdfExport";
-import PdfViewer from "../components/accountDetail/PdfViewer";
 
 export default function AccountDetailPage() {
   const { id } = useParams();
@@ -43,10 +42,8 @@ export default function AccountDetailPage() {
   const [year, setYear] = useState("");
   const [showFilters, setShowFilters] = useState(false);
 
-  // PDF viewer / exporting
+  // PDF exporting
   const [exporting, setExporting] = useState(false);
-  const [pdfResult, setPdfResult] = useState(null); // { blob, filename }
-  const [viewerOpen, setViewerOpen] = useState(false);
 
   // Snackbar
   const [snack, setSnack] = useState({ open: false, severity: "info", message: "" });
@@ -55,10 +52,12 @@ export default function AccountDetailPage() {
     if (!user) return;
 
     // fetch account once
-    getAccountById(user.uid, id).then((acct) => setAccount(acct)).catch((err) => {
-      console.error("Failed to load account:", err);
-      setSnack({ open: true, severity: "error", message: "Failed to load account" });
-    });
+    getAccountById(user.uid, id)
+      .then((acct) => setAccount(acct))
+      .catch((err) => {
+        console.error("Failed to load account:", err);
+        setSnack({ open: true, severity: "error", message: "Failed to load account" });
+      });
 
     // listen to transactions
     const unsubTx = listenToTransactions(user.uid, (allTxns) => {
@@ -114,7 +113,9 @@ export default function AccountDetailPage() {
 
   // Helpers for filter dropdowns
   const months = Array.from({ length: 12 }, (_, i) => i + 1);
-  const years = Array.from(new Set(transactions.map((t) => t.createdAt?.toDate().getFullYear())))
+  const years = Array.from(
+    new Set(transactions.map((t) => t.createdAt?.toDate().getFullYear()))
+  )
     .filter(Boolean)
     .sort((a, b) => b - a);
 
@@ -137,7 +138,7 @@ export default function AccountDetailPage() {
     }
   };
 
-  // Export -> generate blob and open viewer
+  // Export -> generate blob and navigate to full-screen viewer
   const handleExportPDF = async () => {
     if (!account) {
       setSnack({ open: true, severity: "warning", message: "Account not loaded yet" });
@@ -147,15 +148,24 @@ export default function AccountDetailPage() {
       setExporting(true);
       const result = await exportAccountStatement({ account, filteredTransactions, user });
       if (result && result.blob) {
-        setPdfResult(result);
-        setViewerOpen(true);
+        navigate(`/dashboard/accounts/${id}/statement`, {
+          state: { pdfResult: result },
+        });
       } else {
         console.warn("exportAccountStatement returned no blob");
-        setSnack({ open: true, severity: "error", message: "Failed to prepare statement" });
+        setSnack({
+          open: true,
+          severity: "error",
+          message: "Failed to prepare statement",
+        });
       }
     } catch (err) {
       console.error("Failed to generate PDF:", err);
-      setSnack({ open: true, severity: "error", message: "Failed to generate statement" });
+      setSnack({
+        open: true,
+        severity: "error",
+        message: "Failed to generate statement",
+      });
     } finally {
       setExporting(false);
     }
@@ -259,17 +269,6 @@ export default function AccountDetailPage() {
 
       {/* Floating add button */}
       <AddTransactionFab onClick={handleAddTransaction} />
-
-      {/* Pdf Viewer Dialog */}
-      <PdfViewer
-        open={viewerOpen}
-        onClose={() => {
-          setViewerOpen(false);
-          // free blob if you want
-          setPdfResult(null);
-        }}
-        pdfResult={pdfResult}
-      />
 
       {/* Snackbar for quick messages */}
       <Snackbar

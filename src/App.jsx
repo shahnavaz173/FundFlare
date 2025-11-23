@@ -10,6 +10,7 @@ import AccountDetailPage from "./pages/AccountDetailPage";
 import EditTransactionPage from "./pages/EditTransactionPage";
 import AddAccountPage from "./pages/AddAccountPage";
 import AddTransactionPage from "./pages/AddTransactionPage";
+import StatementViewerPage from "./pages/StatementViewerPage";
 import ImportTransactionsPage from "./pages/ImportTransactionsPage";
 import { CircularProgress, Box } from "@mui/material";
 
@@ -47,6 +48,8 @@ export default function App() {
         <Route path="accounts" element={<AccountsPage />} />
         <Route path="accounts/:id" element={<AccountDetailPage />} />
         <Route path="accounts/add" element={<AddAccountPage />} />
+        <Route path="accounts/:id/statement" element={<StatementViewerPage />} />
+
         <Route path="transactions" element={<TransactionsPage />} />
         <Route path="transactions/add" element={<AddTransactionPage />} />
         <Route
