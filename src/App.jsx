@@ -13,7 +13,7 @@ import AddTransactionPage from "./pages/AddTransactionPage";
 import StatementViewerPage from "./pages/StatementViewerPage";
 import ImportTransactionsPage from "./pages/ImportTransactionsPage";
 import { CircularProgress, Box } from "@mui/material";
-// Test comment
+
 export default function App() {
   const { user, loading } = useAuth();
 
